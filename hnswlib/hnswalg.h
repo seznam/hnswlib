@@ -1,6 +1,5 @@
 #pragma once
 
-#include "visited_list_pool.h"
 #include "hnswlib.h"
 #include <random>
 #include <stdlib.h>
@@ -54,9 +53,6 @@ namespace hnswlib {
 
             cur_element_count = 0;
 
-            visited_list_pool_ = new VisitedListPool(1, max_elements);
-
-
 
             //initializations for special treatment of the first node
             enterpoint_node_ = -1;
@@ -85,7 +81,6 @@ namespace hnswlib {
                     free(linkLists_[i]);
             }
             free(linkLists_);
-            delete visited_list_pool_;
         }
 
         size_t max_elements_;
@@ -102,7 +97,6 @@ namespace hnswlib {
         int maxlevel_;
 
 
-        VisitedListPool *visited_list_pool_;
         std::mutex cur_element_count_guard_;
 
         std::vector<std::mutex> link_list_locks_;
@@ -155,9 +149,8 @@ namespace hnswlib {
 
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayer(tableint ep_id, const void *data_point, int layer) {
-            VisitedList *vl = visited_list_pool_->getFreeVisitedList();
-            vl_type *visited_array = vl->mass;
-            vl_type visited_array_tag = vl->curV;
+
+            std::vector<bool> visited(max_elements_);
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidateSet;
@@ -172,7 +165,7 @@ namespace hnswlib {
                 lowerBound = std::numeric_limits<dist_t>::max();
                 candidateSet.emplace(-lowerBound, ep_id);
             }
-            visited_array[ep_id] = visited_array_tag;
+            visited[ep_id] = true;
 
             while (!candidateSet.empty()) {
                 std::pair<dist_t, tableint> curr_el_pair = candidateSet.top();
@@ -195,8 +188,6 @@ namespace hnswlib {
                 size_t size = getListCount((linklistsizeint*)data);
                 tableint *datal = (tableint *) (data + 1);
 #ifdef USE_SSE
-                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
                 _mm_prefetch(getDataByInternalId(*datal), _MM_HINT_T0);
                 _mm_prefetch(getDataByInternalId(*(datal + 1)), _MM_HINT_T0);
 #endif
@@ -205,19 +196,15 @@ namespace hnswlib {
                     tableint candidate_id = *(datal + j);
 //                    if (candidate_id == 0) continue;
 #ifdef USE_SSE
-                    _mm_prefetch((char *) (visited_array + *(datal + j + 1)), _MM_HINT_T0);
                     _mm_prefetch(getDataByInternalId(*(datal + j + 1)), _MM_HINT_T0);
 #endif
-                    if (visited_array[candidate_id] == visited_array_tag) continue;
-                    visited_array[candidate_id] = visited_array_tag;
+                    if (visited[candidate_id]) continue;
+                    visited[candidate_id] = true;
                     char *currObj1 = (getDataByInternalId(candidate_id));
 
                     dist_t dist1 = fstdistfunc_(data_point, currObj1, dist_func_param_);
                     if (top_candidates.size() < ef_construction_ || lowerBound > dist1) {
                         candidateSet.emplace(-dist1, candidate_id);
-#ifdef USE_SSE
-                        _mm_prefetch(getDataByInternalId(candidateSet.top().second), _MM_HINT_T0);
-#endif
 
                         if (!isMarkedDeleted(candidate_id))
                             top_candidates.emplace(dist1, candidate_id);
@@ -230,7 +217,6 @@ namespace hnswlib {
                     }
                 }
             }
-            visited_list_pool_->releaseVisitedList(vl);
 
             return top_candidates;
         }
@@ -238,9 +224,8 @@ namespace hnswlib {
         template <bool has_deletions>
         std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst>
         searchBaseLayerST(tableint ep_id, const void *data_point, size_t ef) const {
-            VisitedList *vl = visited_list_pool_->getFreeVisitedList();
-            vl_type *visited_array = vl->mass;
-            vl_type visited_array_tag = vl->curV;
+
+            std::vector<bool> visited(max_elements_);
 
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> top_candidates;
             std::priority_queue<std::pair<dist_t, tableint>, std::vector<std::pair<dist_t, tableint>>, CompareByFirst> candidate_set;
@@ -256,7 +241,7 @@ namespace hnswlib {
                 candidate_set.emplace(-lowerBound, ep_id);
             }
 
-            visited_array[ep_id] = visited_array_tag;
+            visited[ep_id] = true;
 
             while (!candidate_set.empty()) {
 
@@ -273,34 +258,25 @@ namespace hnswlib {
 //                bool cur_node_deleted = isMarkedDeleted(current_node_id);
 
 #ifdef USE_SSE
-                _mm_prefetch((char *) (visited_array + *(data + 1)), _MM_HINT_T0);
-                _mm_prefetch((char *) (visited_array + *(data + 1) + 64), _MM_HINT_T0);
-                _mm_prefetch(data_level0_memory_ + (*(data + 1)) * size_data_per_element_ + offsetData_, _MM_HINT_T0);
-                _mm_prefetch((char *) (data + 2), _MM_HINT_T0);
+                _mm_prefetch(getDataByInternalId(*(data + 1)), _MM_HINT_T0);
+                _mm_prefetch(getDataByInternalId(*(data + 2)), _MM_HINT_T0);
 #endif
 
                 for (size_t j = 1; j <= size; j++) {
                     int candidate_id = *(data + j);
 //                    if (candidate_id == 0) continue;
 #ifdef USE_SSE
-                    _mm_prefetch((char *) (visited_array + *(data + j + 1)), _MM_HINT_T0);
-                    _mm_prefetch(data_level0_memory_ + (*(data + j + 1)) * size_data_per_element_ + offsetData_,
-                                 _MM_HINT_T0);////////////
+                    _mm_prefetch(getDataByInternalId(*(data + j + 1)), _MM_HINT_T0);
 #endif
-                    if (!(visited_array[candidate_id] == visited_array_tag)) {
+                    if (!visited[candidate_id]) {
 
-                        visited_array[candidate_id] = visited_array_tag;
+                        visited[candidate_id] = true;
 
                         char *currObj1 = (getDataByInternalId(candidate_id));
                         dist_t dist = fstdistfunc_(data_point, currObj1, dist_func_param_);
 
                         if (top_candidates.size() < ef || lowerBound > dist) {
                             candidate_set.emplace(-dist, candidate_id);
-#ifdef USE_SSE
-                            _mm_prefetch(data_level0_memory_ + candidate_set.top().second * size_data_per_element_ +
-                                         offsetLevel0_,///////////
-                                         _MM_HINT_T0);////////////////////////
-#endif
 
                             if (!has_deletions || !isMarkedDeleted(candidate_id))
                                 top_candidates.emplace(dist, candidate_id);
@@ -315,7 +291,6 @@ namespace hnswlib {
                 }
             }
 
-            visited_list_pool_->releaseVisitedList(vl);
             return top_candidates;
         }
 
@@ -541,11 +516,6 @@ namespace hnswlib {
                 throw std::runtime_error("Cannot resize, max element is less than the current number of elements");
 
 
-            delete visited_list_pool_;
-            visited_list_pool_ = new VisitedListPool(1, new_max_elements);
-
-
-
             element_levels_.resize(new_max_elements);
 
             std::vector<std::mutex>(new_max_elements).swap(link_list_locks_);
@@ -684,9 +654,6 @@ namespace hnswlib {
 
             if (!search_only_)
                 std::vector<std::mutex>(max_elements).swap(link_list_locks_);
-
-
-            visited_list_pool_ = new VisitedListPool(1, max_elements);
 
 
             linkLists_ = (char **) malloc(sizeof(void *) * max_elements);

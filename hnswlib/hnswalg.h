@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <unordered_set>
 #include <list>
+#include <fstream>
 
 
 namespace hnswlib {

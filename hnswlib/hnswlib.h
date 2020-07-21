@@ -25,6 +25,7 @@
 
 #include <queue>
 #include <vector>
+#include <iostream>
 
 #include <string.h>
 
@@ -84,5 +85,6 @@ namespace hnswlib {
 
 #include "space_l2.h"
 #include "space_ip.h"
+#include "space_lev.h"
 #include "bruteforce.h"
 #include "hnswalg.h"

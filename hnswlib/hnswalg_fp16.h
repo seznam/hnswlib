@@ -77,7 +77,7 @@ namespace hnswlib
             inDatapoint += 4;
             __m128i v_hf = _mm_cvtps_ph(inValue, _MM_FROUND_TO_NEAREST_INT);
             //_mm_storeu_si64(outAddr, v_hf); // FIXME: works on gcc-9 and later
-            _mm_storel_epi64((__m128i_u *)outDatapoint, v_hf);
+            _mm_storel_epi64((__m128i *) outDatapoint, v_hf);
             outDatapoint += 1;
         }
     }

@@ -10,12 +10,12 @@ namespace hnswlib {
 
     // AVX version, 8 floats per operation
     static float L2SqrSIMD8Ext_FP16(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
-        __m128i_u *pVect1 = (__m128i_u *) pVect1v;
-        __m128i_u *pVect2 = (__m128i_u *) pVect2v;
+        __m128i *pVect1 = (__m128i *) pVect1v;
+        __m128i *pVect2 = (__m128i *) pVect2v;
         size_t qty = *((size_t *) qty_ptr);
         float PORTABLE_ALIGN32 TmpRes[8];
 
-        const __m128i_u *pEnd1 = pVect1 + qty/8;
+        const __m128i *pEnd1 = pVect1 + qty/8;
 
         __m256 diff, v1, v2;
         __m128i v1i;
@@ -56,12 +56,12 @@ namespace hnswlib {
 
         while (pVect1 < pEnd1) {
             //v1i = _mm_loadu_si64(pVect1); // FIXME: works on gcc-9 and later
-            v1i = _mm_loadl_epi64((__m128i_u *)pVect1);
+            v1i = _mm_loadl_epi64((__m128i *)pVect1);
             v1 = _mm_cvtph_ps(v1i);
             pVect1 += 4;
 
             //v2i = _mm_loadu_si64(pVect2); // FIXME: works on gcc-9 and later
-            v2i = _mm_loadl_epi64((__m128i_u *)pVect2);
+            v2i = _mm_loadl_epi64((__m128i *)pVect2);
             v2 = _mm_cvtph_ps(v2i);
             pVect2 += 4;
 

@@ -43,7 +43,7 @@ namespace hnswlib
 
         template <typename Comp>
         std::vector<std::pair<dist_t, hnswlib::labeltype>> searchKnn(const void *datapoint, size_t result_count, Comp comparator) {
-            uint64_t *halfDatapoint = (uint64_t *) alloca(data_size_);
+            __m128i *halfDatapoint = (__m128i *) alloca(data_size_);
             convertSpToHp((float *) datapoint, halfDatapoint, dim_);
             return hierarchical_nsw_.searchKnn(halfDatapoint, result_count);
         }
@@ -57,7 +57,9 @@ namespace hnswlib
         }
 
         static void convertSpToHp(const float * inDatapoint, uint64_t * outDatapoint, const size_t dim);
+        static void convertSpToHp(const float * inDatapoint, __m128i * outDatapoint, const size_t dim);
         static void convertHpToSp(const uint64_t * inDatapoint, float * outDatapoint, const size_t dim);
+        static void convertHpToSp(const __m128i * inDatapoint, float * outDatapoint, const size_t dim);
     };
 
     template<typename dist_t>
@@ -67,6 +69,17 @@ namespace hnswlib
             __m128 f = _mm_cvtph_ps(h);
             _mm_storeu_ps(outDatapoint, f);
             outDatapoint += 4;
+        }
+    }
+
+    template<typename dist_t>
+    void HierarchicalNSW_FP16<dist_t>::convertHpToSp(const __m128i * inDatapoint, float * outDatapoint, const size_t dim) {
+        for(size_t i = 0; i != dim / 8; i++) {
+            __m128i h = _mm_loadu_si128(inDatapoint);
+            inDatapoint += 1;
+            __m256 f = _mm256_cvtph_ps(h);
+            _mm256_storeu_ps(outDatapoint, f);
+            outDatapoint += 8;
         }
     }
 
@@ -83,16 +96,27 @@ namespace hnswlib
     }
 
     template<typename dist_t>
+    void HierarchicalNSW_FP16<dist_t>::convertSpToHp(const float * inDatapoint, __m128i * outDatapoint, const size_t dim) {
+        for(size_t i = 0; i != dim / 8; i++) {
+            __m256 inValue = _mm256_loadu_ps(inDatapoint);
+            inDatapoint += 8;
+            __m128i v_hf = _mm256_cvtps_ph(inValue, _MM_FROUND_TO_NEAREST_INT);
+            _mm_storeu_si128(outDatapoint, v_hf);
+            outDatapoint += 1;
+        }
+    }
+
+    template<typename dist_t>
     void HierarchicalNSW_FP16<dist_t>::addPoint(const void *datapoint, hnswlib::labeltype label) {
-        uint64_t *halfDatapoint = (uint64_t *) alloca(data_size_);
+        __m128i *halfDatapoint = (__m128i *) alloca(data_size_);
         convertSpToHp((float *) datapoint, halfDatapoint, dim_);
         hierarchical_nsw_.addPoint(halfDatapoint, label);
     }
 
     template<typename dist_t>
     std::priority_queue<std::pair<dist_t, hnswlib::labeltype >> HierarchicalNSW_FP16<dist_t>::searchKnn(const void *datapoint, size_t result_count) const {
-        uint64_t *halfDatapoint = (uint64_t *) alloca(data_size_);
-        convertSpToHp((float *)datapoint, halfDatapoint, dim_);
+        __m128i *halfDatapoint = (__m128i *) alloca(data_size_);
+        convertSpToHp((float *) datapoint, halfDatapoint, dim_);
         return hierarchical_nsw_.searchKnn(halfDatapoint, result_count);
     }
 

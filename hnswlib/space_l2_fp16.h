@@ -8,19 +8,38 @@
 
 namespace hnswlib {
 
+    // x = ( x7, x6, x5, x4, x3, x2, x1, x0 )
+    inline float horizontalSum(const __m256 x)
+    {
+        // hiQuad = ( x7, x6, x5, x4 )
+        const __m128 hiQuad = _mm256_extractf128_ps(x, 1);
+        // loQuad = ( x3, x2, x1, x0 )
+        const __m128 loQuad = _mm256_castps256_ps128(x);
+        // sumQuad = ( x3 + x7, x2 + x6, x1 + x5, x0 + x4 )
+        const __m128 sumQuad = _mm_add_ps(loQuad, hiQuad);
+        // hiDual = ( -, -, x3 + x7, x2 + x6 )
+        const __m128 hiDual = _mm_movehl_ps(sumQuad, sumQuad);
+        // sumDual = ( -, -, x1 + x3 + x5 + x7, x0 + x2 + x4 + x6 )
+        const __m128 sumDual = _mm_add_ps(sumQuad, hiDual);
+        // hi = ( -, -, -, x1 + x3 + x5 + x7 )
+        const __m128 hi = _mm_shuffle_ps(sumDual, sumDual, 0x1);
+        // sum = ( -, -, -, x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 )
+        const __m128 sum = _mm_add_ss(sumDual, hi);
+        return _mm_cvtss_f32(sum);
+    }
+
     // AVX version, 8 floats per operation
     static float L2SqrSIMD8Ext_FP16(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
         __m128i *pVect1 = (__m128i *) pVect1v;
         __m128i *pVect2 = (__m128i *) pVect2v;
         size_t qty = *((size_t *) qty_ptr);
-        float PORTABLE_ALIGN32 TmpRes[8];
 
         const __m128i *pEnd1 = pVect1 + qty / 8;
 
         __m256 diff, v1, v2;
         __m128i v1i;
         __m128i v2i;
-        __m256 sum = _mm256_set1_ps(0);
+        __m256 sum = _mm256_setzero_ps();
 
         while (pVect1 < pEnd1) {
             v1i = _mm_loadu_si128(pVect1);
@@ -32,12 +51,10 @@ namespace hnswlib {
             pVect2 += 1;
 
             diff = _mm256_sub_ps(v1, v2);
-            sum = _mm256_add_ps(sum, _mm256_mul_ps(diff, diff));
+            sum = _mm256_fmadd_ps(diff, diff, sum);
         }
 
-        _mm256_store_ps(TmpRes, sum);
-
-        return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] + TmpRes[7];
+        return horizontalSum(sum);
     }
 
 

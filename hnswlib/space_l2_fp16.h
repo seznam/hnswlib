@@ -28,33 +28,29 @@ namespace hnswlib {
         return _mm_cvtss_f32(sum);
     }
 
-    // AVX version, 8 floats per operation
-    static float L2SqrSIMD8Ext_FP16(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
+    // AVX version, 16 floats per operation
+    static float L2SqrSIMD16Ext_FP16(const void *pVect1v, const void *pVect2v, const void *qty_ptr) {
         __m128i *pVect1 = (__m128i *) pVect1v;
         __m128i *pVect2 = (__m128i *) pVect2v;
-        size_t qty = *((size_t *) qty_ptr);
+        size_t iterations = *((size_t *) qty_ptr) / 16;
 
-        const __m128i *pEnd1 = pVect1 + qty / 8;
+        __m256 diff1, diff2;
+        __m256 sum1 = _mm256_setzero_ps();
+        __m256 sum2 = _mm256_setzero_ps();
 
-        __m256 diff, v1, v2;
-        __m128i v1i;
-        __m128i v2i;
-        __m256 sum = _mm256_setzero_ps();
-
-        while (pVect1 < pEnd1) {
-            v1i = _mm_loadu_si128(pVect1);
-            v1 = _mm256_cvtph_ps(v1i);
+        for (size_t i = 0; i < iterations; ++i) {
+            diff1 = _mm256_sub_ps(_mm256_cvtph_ps(_mm_loadu_si128(pVect1)), _mm256_cvtph_ps(_mm_loadu_si128(pVect2)));
+            sum1 = _mm256_fmadd_ps(diff1, diff1, sum1);
             pVect1 += 1;
-
-            v2i = _mm_loadu_si128(pVect2);
-            v2 = _mm256_cvtph_ps(v2i);
             pVect2 += 1;
 
-            diff = _mm256_sub_ps(v1, v2);
-            sum = _mm256_fmadd_ps(diff, diff, sum);
+            diff2 = _mm256_sub_ps(_mm256_cvtph_ps(_mm_loadu_si128(pVect1)), _mm256_cvtph_ps(_mm_loadu_si128(pVect2)));
+            sum2 = _mm256_fmadd_ps(diff2, diff2, sum2);
+            pVect1 += 1;
+            pVect2 += 1;
         }
 
-        return horizontalSum(sum);
+        return horizontalSum(_mm256_add_ps(sum1, sum2));
     }
 
 
@@ -64,8 +60,8 @@ namespace hnswlib {
         size_t dim_;
     public:
         L2Space_FP16(size_t dim) {
-            if (dim % 8 == 0) {
-                fstdistfunc_ = L2SqrSIMD8Ext_FP16;
+            if (dim % 16 == 0) {
+                fstdistfunc_ = L2SqrSIMD16Ext_FP16;
             } else {
                 throw std::runtime_error("Data type not supported!");
             }
